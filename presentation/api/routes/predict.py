@@ -4,13 +4,13 @@ from container import container
 router = APIRouter(prefix = '/api', tags = ["Predict"])
 
 @router.get("/{user_id}/predict")
-def predict(
+async def predict(
     user_id: str,
     latitude: float = Query(..., ge=-90, le=90),
     longitude: float = Query(..., ge=-180, le=180)
     ):
     try:
-        kp = container.weather_prediction_center_client.get_effective_kp_index()
+        kp = await container.weather_prediction_center_client.get_effective_kp_index()
         feature_rows = container.open_meteo_client.build_prediction_feature_rows(latitude, longitude, kp)
         predictions = container.ml_service.predict_risk(
             user_id=user_id,

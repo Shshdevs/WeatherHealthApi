@@ -86,11 +86,12 @@ class FirebaseClient:
     ) -> str:
         prediction.setdefault("createdAt", firestore.SERVER_TIMESTAMP)
 
-        ref = self.db.collection("users") \
-            .document(user_id) \
-            .collection("predictions") \
-            .document() \
-
+        ref = (
+            self.db.collection("users") 
+            .document(user_id) 
+            .collection("predictions") 
+            .document() 
+            )
         ref.set(prediction)
         return ref.id
     

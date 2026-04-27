@@ -12,7 +12,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from domain.enums.health import RiskReason, SymptomType, TimeOfDay
+from application.domain.enums.health import RiskReason, SymptomType, TimeOfDay
 
 
 class PersonalModelService:

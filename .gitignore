@@ -1,3 +1,5 @@
 cache/
 __pycache__/
 sensitive/
+*/*/.DS_Store
+*/.DS_Store

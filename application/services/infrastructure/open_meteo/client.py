@@ -8,7 +8,7 @@ import requests_cache
 
 from retry_requests import retry
 
-from schemas import (
+from application.services.infrastructure.open_meteo.schemas import (
     AirQualityForecastResult,
     AirQualityPoint,
     WeatherForecastResult,
