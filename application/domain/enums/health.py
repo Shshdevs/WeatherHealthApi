@@ -52,3 +52,10 @@ class RiskReason(str, Enum):
     COLD_STRESS = "COLD_STRESS"
 
     HIGH_POLLEN = "HIGH_POLLEN"
+
+class UserHealthCategory(str, Enum):
+    HYPOTONIC = "HYPOTONIC"
+    HYPERTONIC = "HYPERTONIC"
+    JOINT_DISEASE = "JOINT_DISEASE"
+    MIGRAINE = "MIGRAINE"
+    GENERAL = "GENERAL"

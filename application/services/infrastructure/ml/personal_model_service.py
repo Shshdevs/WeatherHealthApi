@@ -23,6 +23,13 @@ class PersonalModelService:
         self.feature_columns = [
             "hour",
             "time_of_day_code",
+
+            "category_hypotonic",
+            "category_hypertonic",
+            "category_joint_disease",
+            "category_migraine",
+            "category_general",
+
             "temperature",
             "temperature_delta_6h",
             "temperature_delta_24h",
@@ -55,13 +62,18 @@ class PersonalModelService:
         diary_entries: list[dict[str, Any]],
         weather_by_entry_id: dict[str, dict[str, Any]],
         prediction_feature_rows: list[dict[str, Any]],
+        user_profile: dict[str, Any] | None = None,
         min_entries: int = 10,
     ) -> dict[str, Any]:
+        
         model_existed_before = self.model_exists(user_id)
+
+        category = (user_profile or {}).get("healthCategory", "GENERAL")
 
         training_df = self.build_training_dataframe(
             diary_entries=diary_entries,
             weather_by_entry_id=weather_by_entry_id,
+            user_category=category,
         )
 
         if training_df.empty or len(training_df) < min_entries:
@@ -75,6 +87,13 @@ class PersonalModelService:
 
         model_meta["status"] = "RETRAINED" if model_existed_before else "CREATED"
 
+        prediction_feature_rows = [
+            {
+                **row,
+                **self._encode_user_category(category),
+            }
+            for row in prediction_feature_rows
+        ]
         predictions = self.predict_risk(
             user_id=user_id,
             feature_rows=prediction_feature_rows,
@@ -141,45 +160,131 @@ class PersonalModelService:
         self,
         risk_score: float,
         reasons: list[RiskReason],
+        row: dict[str, Any],
     ) -> list[str]:
-        if risk_score < 0.7:
+        if risk_score < 0.4:
             return []
 
         symptoms = set()
 
-        if (
-            RiskReason.PRESSURE_DROP in reasons
-            or RiskReason.PRESSURE_RISE in reasons
-            or RiskReason.PRESSURE_SWING in reasons
-        ):
+        is_hypotonic = int(row.get("category_hypotonic", 0)) == 1
+        is_hypertonic = int(row.get("category_hypertonic", 0)) == 1
+        is_joint = int(row.get("category_joint_disease", 0)) == 1
+        is_migraine = int(row.get("category_migraine", 0)) == 1
+        is_general = int(row.get("category_general", 0)) == 1
+
+        pressure_reasons = {
+            RiskReason.PRESSURE_DROP,
+            RiskReason.PRESSURE_RISE,
+            RiskReason.PRESSURE_SWING,
+        }
+
+        temp_reasons = {
+            RiskReason.TEMPERATURE_DROP,
+            RiskReason.TEMPERATURE_RISE,
+            RiskReason.TEMPERATURE_SWING,
+        }
+
+        if any(reason in reasons for reason in pressure_reasons):
             symptoms.add(SymptomType.HEADACHE.value)
-            symptoms.add(SymptomType.DIZZINESS.value)
+
+            if is_hypotonic:
+                symptoms.add(SymptomType.DIZZINESS.value)
+                symptoms.add(SymptomType.WEAKNESS.value)
+                symptoms.add(SymptomType.LOW_PRESSURE.value)
+
+            if is_hypertonic:
+                symptoms.add(SymptomType.PRESSURE_SPIKE.value)
+                symptoms.add(SymptomType.HEART_PALPITATION.value)
+
+            if is_migraine:
+                symptoms.add(SymptomType.MIGRAINE.value)
+                symptoms.add(SymptomType.NAUSEA.value)
 
         if RiskReason.GEOMAGNETIC_STORM in reasons:
             symptoms.add(SymptomType.HEADACHE.value)
             symptoms.add(SymptomType.FATIGUE.value)
 
+            if is_hypertonic:
+                symptoms.add(SymptomType.PRESSURE_SPIKE.value)
+
+            if is_migraine:
+                symptoms.add(SymptomType.MIGRAINE.value)
+
         if RiskReason.HIGH_HUMIDITY in reasons:
             symptoms.add(SymptomType.WEAKNESS.value)
             symptoms.add(SymptomType.DROWSINESS.value)
 
+            if is_hypotonic:
+                symptoms.add(SymptomType.DIZZINESS.value)
+
+            if is_joint:
+                symptoms.add(SymptomType.JOINT_PAIN.value)
+                symptoms.add(SymptomType.BACK_PAIN.value)
+
+        if RiskReason.PRECIPITATION in reasons:
+            if is_joint:
+                symptoms.add(SymptomType.JOINT_PAIN.value)
+                symptoms.add(SymptomType.BACK_PAIN.value)
+            else:
+                symptoms.add(SymptomType.FATIGUE.value)
+
+        if RiskReason.STRONG_WIND in reasons:
+            symptoms.add(SymptomType.HEADACHE.value)
+
+            if is_migraine:
+                symptoms.add(SymptomType.MIGRAINE.value)
+                symptoms.add(SymptomType.NAUSEA.value)
+
         if RiskReason.HEAT_STRESS in reasons:
             symptoms.add(SymptomType.WEAKNESS.value)
-            symptoms.add(SymptomType.HEART_PALPITATION.value)
+            symptoms.add(SymptomType.FATIGUE.value)
 
-        if RiskReason.COLD_STRESS in reasons:
-            symptoms.add(SymptomType.JOINT_PAIN.value)
-            symptoms.add(SymptomType.BACK_PAIN.value)
+            if is_hypertonic:
+                symptoms.add(SymptomType.PRESSURE_SPIKE.value)
+                symptoms.add(SymptomType.HEART_PALPITATION.value)
+
+        if RiskReason.COLD_STRESS in reasons or RiskReason.TEMPERATURE_DROP in reasons:
+            if is_joint:
+                symptoms.add(SymptomType.JOINT_PAIN.value)
+                symptoms.add(SymptomType.BACK_PAIN.value)
+            else:
+                symptoms.add(SymptomType.WEAKNESS.value)
+
+        if any(reason in reasons for reason in temp_reasons):
+            symptoms.add(SymptomType.FATIGUE.value)
+
+            if is_migraine:
+                symptoms.add(SymptomType.HEADACHE.value)
+
+        if RiskReason.LOW_SUNLIGHT in reasons:
+            symptoms.add(SymptomType.DROWSINESS.value)
+            symptoms.add(SymptomType.FATIGUE.value)
 
         if RiskReason.HIGH_POLLEN in reasons:
             symptoms.add(SymptomType.BREATHING_DISCOMFORT.value)
 
-        return list(symptoms)
-    
+        if is_general and not symptoms:
+            symptoms.add(SymptomType.FATIGUE.value)
+            symptoms.add(SymptomType.WEAKNESS.value)
+
+        if risk_score >= 0.7:
+            return list(symptoms)
+
+        soft_symptoms = {
+            SymptomType.FATIGUE.value,
+            SymptomType.WEAKNESS.value,
+            SymptomType.DROWSINESS.value,
+            SymptomType.HEADACHE.value,
+        }
+
+        return list(symptoms.intersection(soft_symptoms))
+
     def build_training_dataframe(
         self,
         diary_entries: list[dict[str, Any]],
         weather_by_entry_id: dict[str, dict[str, Any]],
+        user_category: str = "GENERAL",
     ) -> pd.DataFrame:
         rows = []
 
@@ -226,7 +331,7 @@ class PersonalModelService:
                 "water_liters": float(entry.get("waterLiters", 1.0)),
                 "caffeine_cups": float(entry.get("caffeineCups", 0)),
             }
-
+            row.update(self._encode_user_category(user_category))
             rows.append(row)
 
         return pd.DataFrame(rows)
@@ -337,6 +442,7 @@ class PersonalModelService:
                     "predictedSymptoms": self._predict_symptoms_by_reasons(
                         risk_score=float(risk_score),
                         reasons=reasons,
+                        row=row,
                     ),
                     "source": "ML_MODEL",
                 }
@@ -392,59 +498,123 @@ class PersonalModelService:
         kp_index = float(row.get("kp_index", 0))
         temperature = float(row.get("temperature", 20))
 
-        thunderstorm_probability = float(
-            row.get("thunderstorm_probability", 0)
-        )
+        thunderstorm_probability = float(row.get("thunderstorm_probability", 0))
         cloud_cover = float(row.get("cloud_cover", 0))
         sunshine_duration = float(row.get("sunshine_duration", 3600))
         pollen_index = float(row.get("pollen_index", 0))
 
+        is_hypotonic = int(row.get("category_hypotonic", 0)) == 1
+        is_hypertonic = int(row.get("category_hypertonic", 0)) == 1
+        is_joint = int(row.get("category_joint_disease", 0)) == 1
+        is_migraine = int(row.get("category_migraine", 0)) == 1
+
+        def add(reason: RiskReason) -> None:
+            if reason not in reasons:
+                reasons.append(reason)
+
         if pressure_delta_24h <= -7 or pressure_delta_3h <= -4:
-            reasons.append(RiskReason.PRESSURE_DROP)
+            add(RiskReason.PRESSURE_DROP)
 
         if pressure_delta_24h >= 7 or pressure_delta_3h >= 4:
-            reasons.append(RiskReason.PRESSURE_RISE)
+            add(RiskReason.PRESSURE_RISE)
 
         if abs(pressure_delta_24h) >= 7 or abs(pressure_delta_3h) >= 4:
-            reasons.append(RiskReason.PRESSURE_SWING)
+            add(RiskReason.PRESSURE_SWING)
 
         if temp_delta_24h <= -7 or temp_delta_6h <= -5:
-            reasons.append(RiskReason.TEMPERATURE_DROP)
+            add(RiskReason.TEMPERATURE_DROP)
 
         if temp_delta_24h >= 7 or temp_delta_6h >= 5:
-            reasons.append(RiskReason.TEMPERATURE_RISE)
+            add(RiskReason.TEMPERATURE_RISE)
 
         if abs(temp_delta_24h) >= 7 or abs(temp_delta_6h) >= 5:
-            reasons.append(RiskReason.TEMPERATURE_SWING)
+            add(RiskReason.TEMPERATURE_SWING)
 
         if humidity >= 80:
-            reasons.append(RiskReason.HIGH_HUMIDITY)
+            add(RiskReason.HIGH_HUMIDITY)
 
         if humidity <= 25:
-            reasons.append(RiskReason.LOW_HUMIDITY)
+            add(RiskReason.LOW_HUMIDITY)
 
         if wind_speed >= 10:
-            reasons.append(RiskReason.STRONG_WIND)
+            add(RiskReason.STRONG_WIND)
 
         if precipitation > 0:
-            reasons.append(RiskReason.PRECIPITATION)
+            add(RiskReason.PRECIPITATION)
 
         if thunderstorm_probability >= 50:
-            reasons.append(RiskReason.THUNDERSTORM)
+            add(RiskReason.THUNDERSTORM)
 
         if kp_index >= 5:
-            reasons.append(RiskReason.GEOMAGNETIC_STORM)
+            add(RiskReason.GEOMAGNETIC_STORM)
 
         if cloud_cover >= 85 or sunshine_duration <= 1800:
-            reasons.append(RiskReason.LOW_SUNLIGHT)
+            add(RiskReason.LOW_SUNLIGHT)
 
         if temperature >= 30:
-            reasons.append(RiskReason.HEAT_STRESS)
+            add(RiskReason.HEAT_STRESS)
 
         if temperature <= -10:
-            reasons.append(RiskReason.COLD_STRESS)
+            add(RiskReason.COLD_STRESS)
 
         if pollen_index >= 3:
-            reasons.append(RiskReason.HIGH_POLLEN)
+            add(RiskReason.HIGH_POLLEN)
+
+        if is_hypotonic:
+            if pressure_delta_24h <= -5 or pressure_delta_3h <= -3:
+                add(RiskReason.PRESSURE_DROP)
+
+            if humidity >= 75:
+                add(RiskReason.HIGH_HUMIDITY)
+
+            if cloud_cover >= 75 or sunshine_duration <= 2400:
+                add(RiskReason.LOW_SUNLIGHT)
+
+        if is_hypertonic:
+            if abs(pressure_delta_24h) >= 5 or abs(pressure_delta_3h) >= 3:
+                add(RiskReason.PRESSURE_SWING)
+
+            if temperature >= 27:
+                add(RiskReason.HEAT_STRESS)
+
+            if kp_index >= 4:
+                add(RiskReason.GEOMAGNETIC_STORM)
+
+        if is_joint:
+            if humidity >= 70:
+                add(RiskReason.HIGH_HUMIDITY)
+
+            if temp_delta_24h <= -5 or temp_delta_6h <= -3:
+                add(RiskReason.TEMPERATURE_DROP)
+
+            if precipitation > 0:
+                add(RiskReason.PRECIPITATION)
+
+            if temperature <= 5:
+                add(RiskReason.COLD_STRESS)
+
+        if is_migraine:
+            if wind_speed >= 7:
+                add(RiskReason.STRONG_WIND)
+
+            if abs(pressure_delta_24h) >= 5 or abs(pressure_delta_3h) >= 3:
+                add(RiskReason.PRESSURE_SWING)
+
+            if kp_index >= 4:
+                add(RiskReason.GEOMAGNETIC_STORM)
+
+            if thunderstorm_probability >= 40:
+                add(RiskReason.THUNDERSTORM)
 
         return reasons
+    
+    def _encode_user_category(self, category: str | None) -> dict[str, int]:
+        category = category or "GENERAL"
+
+        return {
+            "category_hypotonic": int(category == "HYPOTONIC"),
+            "category_hypertonic": int(category == "HYPERTONIC"),
+            "category_joint_disease": int(category == "JOINT_DISEASE"),
+            "category_migraine": int(category == "MIGRAINE"),
+            "category_general": int(category == "GENERAL"),
+        }

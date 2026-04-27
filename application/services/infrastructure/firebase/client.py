@@ -14,16 +14,26 @@ class FirebaseClient:
 
         self.db = firestore.client(database_id="default")
 
-    def get_user_profile(self, user_id: str) -> dict[str, Any] | None:
+    def get_user_profile(self, user_id: str) -> dict[str, Any]:
         doc = (
             self.db.collection("users")
             .document(user_id)
-            .collection("profile")
-            .document("main")
             .get()
         )
-        return doc.to_dict() if doc.exists else None
 
+        if not doc.exists:
+            return {
+                "healthCategory": "GENERAL",
+            }
+
+        data = doc.to_dict() or {}
+
+        return {
+            "healthCategory": data.get("healthCategory", "GENERAL"),
+            "dateBirth": data.get("dateBirth"),
+            "token": data.get("token")
+        }
+    
     def get_diary_entries(self, user_id: str, limit: int | None = None) -> list[dict[str, Any]]:
         query = (
             self.db.collection("users")
