@@ -1,0 +1,19 @@
+version: '1.0'
+
+services:
+  weather-health-service:
+    build: .
+    container_name: weather-health-server
+    ports:
+      - "8000:125"
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./sensitive/models:/app/sensitive/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:125/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
