@@ -1,10 +1,5 @@
-from fastapi import FastAPI
-from presentation.api.routes.predict import router as predict_router
-from presentation.api.routes.update_diary import router as update_diary_router
-from presentation.api.routes.health import router as health_router
+from presentation.api.app import create_app
 
-app = FastAPI(title="Weather Health API")
+app = create_app()
 
-app.include_router(predict_router)
-app.include_router(update_diary_router)
-app.include_router(health_router)
+# uvicorn main:app --reload --host 127.0.0.1 --port 4000

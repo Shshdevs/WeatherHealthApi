@@ -5,7 +5,7 @@ from typing import Any
 router = APIRouter(prefix = '/api', tags = ['Update'])
 
 @router.post("/{user_id}/diary")
-async def update_diary(user_id: str, 
+def update_diary(user_id: str, 
     payload: dict[str, Any], 
     latitude: float = Query(..., ge=-90, le=90),
     longitude: float = Query(..., ge=-180, le=180)
@@ -13,7 +13,7 @@ async def update_diary(user_id: str,
     try:
         container.firebase_client.create_diary_entry(user_id, payload)
         diary_entries = container.firebase_client.get_diary_entries(user_id)
-        kp = await container.weather_prediction_center_client.get_effective_kp_index()
+        kp = container.kp_index_client.get_effective_kp_index()
         weather_by_entry_id = container.open_meteo_client.build_weather_by_entry_id(
             diary_entries,
             latitude,
