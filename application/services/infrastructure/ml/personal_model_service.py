@@ -12,7 +12,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from application.domain.enums.health import RiskReason, SymptomType, TimeOfDay
+from application.domain.enums.health import RiskReason, SymptomType, TimeOfDay, RecommendationType
 
 
 class PersonalModelService:
@@ -168,6 +168,107 @@ class PersonalModelService:
             or pulse >= 100
             or pulse <= 50
         )
+    def _build_recommendations(
+        self,
+        risk_score: float,
+        reasons: list[RiskReason],
+        symptoms: list[str],
+        row: dict[str, Any],
+    ) -> list[str]:
+        if risk_score < 0.45:
+            return []
+
+        recommendations = {
+            RecommendationType.DRINK_WATER,
+            RecommendationType.REST_MORE,
+        }
+
+        symptoms_set = set(symptoms)
+
+        is_hypotonic = int(row.get("category_hypotonic", 0)) == 1
+        is_hypertonic = int(row.get("category_hypertonic", 0)) == 1
+        is_joint = int(row.get("category_joint_disease", 0)) == 1
+        is_migraine = int(row.get("category_migraine", 0)) == 1
+
+        if risk_score >= 0.7:
+            recommendations.add(RecommendationType.REDUCE_PHYSICAL_ACTIVITY)
+            recommendations.add(RecommendationType.AVOID_STRESS)
+
+        if any(reason in reasons for reason in {
+            RiskReason.PRESSURE_DROP,
+            RiskReason.PRESSURE_RISE,
+            RiskReason.PRESSURE_SWING,
+            RiskReason.GEOMAGNETIC_STORM,
+        }):
+            recommendations.add(RecommendationType.MONITOR_BLOOD_PRESSURE)
+
+        if RiskReason.HEAT_STRESS in reasons:
+            recommendations.add(RecommendationType.AVOID_OVERHEATING)
+            recommendations.add(RecommendationType.DRINK_WATER)
+            recommendations.add(RecommendationType.LIMIT_CAFFEINE)
+
+        if RiskReason.COLD_STRESS in reasons or RiskReason.TEMPERATURE_DROP in reasons:
+            recommendations.add(RecommendationType.KEEP_WARM)
+
+        if RiskReason.HIGH_HUMIDITY in reasons:
+            recommendations.add(RecommendationType.VENTILATE_ROOM)
+
+        if RiskReason.STRONG_WIND in reasons:
+            recommendations.add(RecommendationType.PROTECT_FROM_WIND)
+            recommendations.add(RecommendationType.AVOID_LONG_WALKS)
+
+        if RiskReason.HIGH_POLLEN in reasons:
+            recommendations.add(RecommendationType.CHECK_POLLEN_EXPOSURE)
+
+        if RiskReason.LOW_SUNLIGHT in reasons:
+            recommendations.add(RecommendationType.SLEEP_EARLIER)
+
+        if SymptomType.MIGRAINE.value in symptoms_set:
+            recommendations.add(RecommendationType.PREPARE_MEDICATION_BY_DOCTOR)
+            recommendations.add(RecommendationType.AVOID_STRESS)
+            recommendations.add(RecommendationType.PROTECT_FROM_WIND)
+
+        if SymptomType.HEADACHE.value in symptoms_set:
+            recommendations.add(RecommendationType.DRINK_WATER)
+            recommendations.add(RecommendationType.REST_MORE)
+            recommendations.add(RecommendationType.LIMIT_CAFFEINE)
+
+        if SymptomType.DIZZINESS.value in symptoms_set or SymptomType.LOW_PRESSURE.value in symptoms_set:
+            recommendations.add(RecommendationType.AVOID_LONG_WALKS)
+            recommendations.add(RecommendationType.REST_MORE)
+
+        if SymptomType.PRESSURE_SPIKE.value in symptoms_set:
+            recommendations.add(RecommendationType.MONITOR_BLOOD_PRESSURE)
+            recommendations.add(RecommendationType.REDUCE_PHYSICAL_ACTIVITY)
+
+        if SymptomType.HEART_PALPITATION.value in symptoms_set:
+            recommendations.add(RecommendationType.AVOID_STRESS)
+            recommendations.add(RecommendationType.LIMIT_CAFFEINE)
+
+        if SymptomType.JOINT_PAIN.value in symptoms_set or SymptomType.BACK_PAIN.value in symptoms_set:
+            recommendations.add(RecommendationType.KEEP_WARM)
+            recommendations.add(RecommendationType.REDUCE_PHYSICAL_ACTIVITY)
+
+        if SymptomType.BREATHING_DISCOMFORT.value in symptoms_set:
+            recommendations.add(RecommendationType.CHECK_POLLEN_EXPOSURE)
+            recommendations.add(RecommendationType.USE_BREATHING_PRACTICES)
+
+        if is_hypertonic:
+            recommendations.add(RecommendationType.MONITOR_BLOOD_PRESSURE)
+            recommendations.add(RecommendationType.LIMIT_CAFFEINE)
+
+        if is_hypotonic:
+            recommendations.add(RecommendationType.DRINK_WATER)
+            recommendations.add(RecommendationType.AVOID_LONG_WALKS)
+
+        if is_joint:
+            recommendations.add(RecommendationType.KEEP_WARM)
+
+        if is_migraine:
+            recommendations.add(RecommendationType.AVOID_STRESS)
+            recommendations.add(RecommendationType.PREPARE_MEDICATION_BY_DOCTOR)
+
+        return [item.value for item in recommendations]
     
     def _predict_symptoms_by_reasons(
         self,
@@ -490,6 +591,20 @@ class PersonalModelService:
                 meteosensitivity_score=meteosensitivity_score,
                 age=age,
             )
+
+            symptoms = self._predict_symptoms_by_reasons(
+                risk_score=float(risk_score),
+                reasons=reasons,
+                row=row,
+            )
+
+            recommendations = self._build_recommendations(
+                risk_score=float(risk_score),
+                reasons=reasons,
+                symptoms=symptoms,
+                row=row,
+            )
+
             result.append(
                 {
                     "forecastDate": row.get("forecastDate"),
@@ -503,15 +618,12 @@ class PersonalModelService:
                     "riskReasons": [
                         reason.value for reason in reasons
                     ],
-                    "predictedSymptoms": self._predict_symptoms_by_reasons(
-                        risk_score=float(risk_score),
-                        reasons=reasons,
-                        row=row,
-                    ),
+                    "predictedSymptoms": symptoms,
+                    "recommendations": recommendations,
                     "source": "ML_MODEL",
                 }
             )
-
+            
         return result
 
     def _apply_weather_reason_adjustment(

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from container import container
+from presentation.utils.attach_weather_to_predictions import attach_weather_to_predictions
 
 router = APIRouter(prefix="/api", tags=["Predict"])
 
@@ -50,7 +51,7 @@ def predict(
                 "latitude": latitude,
                 "longitude": longitude,
             },
-            "predictions": predictions,
+            "predictions": attach_weather_to_predictions(predictions, feature_rows),
         }
 
     except ValueError as e:

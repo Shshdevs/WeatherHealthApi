@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, messaging
 from datetime import datetime, timezone
 
 
@@ -15,6 +15,49 @@ class FirebaseClient:
 
         self.db = firestore.client(database_id="default")
 
+    def get_all_users(self) -> list[dict[str, Any]]:
+        users = []
+        for doc in self.db.collection("users").stream():
+            data = doc.to_dict() or {}
+            data["id"] = doc.id
+            users.append(data)
+        return users
+    
+    def get_user_settings(self, user_id: str) -> dict[str, Any]:
+        doc = (
+            self.db.collection("users")
+            .document(user_id)
+            .collection("settings")
+            .document("main")
+            .get()
+        )
+
+        if not doc.exists:
+            return {
+                "push_enabled": True,
+                "only_high_risk_notifications": False,
+                "symptoms_notify_about": [],
+                "allowed_notification_hours": {
+                    "from": "00:00",
+                    "to": "23:00",
+                },
+            }
+
+        return doc.to_dict() or {}
+    
+    def save_notification(self, user_id: str, notification: dict[str, Any]) -> str:
+        notification.setdefault("createdAt", firestore.SERVER_TIMESTAMP)
+
+        ref = (
+            self.db.collection("users")
+            .document(user_id)
+            .collection("notifications")
+            .document()
+        )
+
+        ref.set(notification)
+        return ref.id
+    
     def get_user_profile(self, user_id: str) -> dict[str, Any]:
         doc = (
             self.db.collection("users")
@@ -30,6 +73,7 @@ class FirebaseClient:
         data = doc.to_dict() or {}
 
         return {
+            "meteosensitivity_score": data.get("meteosensitivity_score", 5),
             "healthCategory": data.get("healthCategory", "GENERAL"),
             "age": self._calculate_age(data.get("birthDate")),
             "token": data.get("token")
@@ -87,6 +131,24 @@ class FirebaseClient:
         ref.set(entry)
         return ref.id
 
+    def send_fcm_notification(
+        self,
+        token: str,
+        title: str,
+        body: str,
+        data: dict[str, str] | None = None,
+    ) -> str:
+        message = messaging.Message(
+            token=token,
+            notification=messaging.Notification(
+                title=title,
+                body=body,
+            ),
+            data=data or {},
+        )
+
+        return messaging.send(message)
+    
     def save_model_meta(self, user_id: str, meta: dict[str, Any]) -> None:
         meta = {
             **meta,
@@ -98,7 +160,6 @@ class FirebaseClient:
             .collection("ml_model") \
             .document("meta") \
             .set(meta, merge=True)
-        
 
     def get_model_meta(self, user_id: str) -> dict[str, Any] | None:
         doc = self.db.collection("users") \

@@ -2,6 +2,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from presentation.utils.calculate_past_days import calculate_past_days
+from presentation.utils.attach_weather_to_predictions import attach_weather_to_predictions
 from container import container
 
 router = APIRouter(prefix="/api", tags=["Update"])
@@ -22,6 +23,7 @@ def update_diary(
 
         user_profile = container.firebase_client.get_user_profile(user_id)
 
+        category = (user_profile or {}).get("healthCategory", "GENERAL")
         diary_entries = container.firebase_client.get_diary_entries(user_id)
 
         kp = container.kp_index_client.get_effective_kp_index()
@@ -60,12 +62,12 @@ def update_diary(
             "status_code": 200,
             "userId": user_id,
             "createdEntry": created_entry,
+            "healthCategory": category,
             "location": {
                 "latitude": latitude,
                 "longitude": longitude,
             },
-            "model": result["model"],
-            "predictions": result["predictions"],
+            "predictions": attach_weather_to_predictions(result["predictions"], prediction_feature_rows),
         }
 
     except ValueError as e:
