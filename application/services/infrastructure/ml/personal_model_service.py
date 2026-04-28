@@ -73,7 +73,7 @@ class PersonalModelService:
 
         category = (user_profile or {}).get("healthCategory", "GENERAL")
         meteosensitivity_score = (user_profile or {}).get("meteosensitivityScore", 5)
-        age = (user_profile or {}).get("age")
+        age = (user_profile or {}).get("age", 30)
 
         training_df = self.build_training_dataframe(
             diary_entries=diary_entries,
@@ -175,7 +175,7 @@ class PersonalModelService:
         reasons: list[RiskReason],
         row: dict[str, Any],
     ) -> list[str]:
-        if risk_score < 0.4:
+        if risk_score < 0.437:
             return []
 
         symptoms = set()
@@ -434,9 +434,42 @@ class PersonalModelService:
         if df.empty:
             return []
 
+        default_prediction_values = {
+            "hour": 12,
+            "time_of_day_code": 1,
+
+            "category_hypotonic": 0,
+            "category_hypertonic": 0,
+            "category_joint_disease": 0,
+            "category_migraine": 0,
+            "category_general": 1,
+
+            "sleep_quality": 3,
+            "stress_score": 3,
+            "pulse": 75,
+            "water_liters": 1.0,
+            "caffeine_cups": 0,
+            "medications_taken": 0,
+
+            "temperature": 20,
+            "temperature_delta_6h": 0,
+            "temperature_delta_24h": 0,
+            "pressure": 1013,
+            "pressure_delta_3h": 0,
+            "pressure_delta_24h": 0,
+            "humidity": 50,
+            "wind_speed": 0,
+            "precipitation": 0,
+            "kp_index": 1,
+            "thunderstorm_probability": 0,
+            "cloud_cover": 0,
+            "sunshine_duration": 3600,
+            "pollen_index": 0,
+        }
+
         for column in self.feature_columns:
             if column not in df.columns:
-                df[column] = 0
+                df[column] = default_prediction_values.get(column, 0)
 
         df = df[self.feature_columns].fillna(0)
 
@@ -446,6 +479,12 @@ class PersonalModelService:
 
         for row, risk_score in zip(feature_rows, probs):
             reasons = self._detect_risk_reasons(row)
+
+            risk_score = self._apply_weather_reason_adjustment(
+                risk_score=float(risk_score),
+                reasons=reasons,
+            )
+
             risk_score = self._apply_profile_risk_adjustment(
                 risk_score=risk_score,
                 meteosensitivity_score=meteosensitivity_score,
@@ -475,6 +514,36 @@ class PersonalModelService:
 
         return result
 
+    def _apply_weather_reason_adjustment(
+        self,
+        risk_score: float,
+        reasons: list[RiskReason],
+    ) -> float:
+        adjusted = risk_score
+
+        strong_reasons = {
+            RiskReason.PRESSURE_DROP,
+            RiskReason.PRESSURE_RISE,
+            RiskReason.PRESSURE_SWING,
+            RiskReason.TEMPERATURE_SWING,
+            RiskReason.GEOMAGNETIC_STORM,
+            RiskReason.THUNDERSTORM,
+            RiskReason.HEAT_STRESS,
+            RiskReason.COLD_STRESS,
+        }
+
+        medium_reasons = {
+            RiskReason.HIGH_HUMIDITY,
+            RiskReason.STRONG_WIND,
+            RiskReason.PRECIPITATION,
+            RiskReason.LOW_SUNLIGHT,
+            RiskReason.HIGH_POLLEN,
+        }
+
+        adjusted += sum(0.10 for reason in reasons if reason in strong_reasons)
+        adjusted += sum(0.05 for reason in reasons if reason in medium_reasons)
+
+        return min(max(adjusted, 0.0), 1.0)
     def _apply_profile_risk_adjustment(
         self,
         risk_score: float,
@@ -506,7 +575,7 @@ class PersonalModelService:
     def _risk_level(self, risk_score: float) -> str:
         if risk_score >= 0.7:
             return "HIGH"
-        if risk_score >= 0.4:
+        if risk_score >= 0.45:
             return "MEDIUM"
 
         return "LOW"

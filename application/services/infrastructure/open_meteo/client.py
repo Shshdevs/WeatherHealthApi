@@ -169,18 +169,17 @@ class OpenMeteoClient:
 
     def build_weather_by_entry_id(
         self,
-        diary_entries: list[dict[str, Any]],
+        diary_entries: list[dict],
         latitude: float,
         longitude: float,
-        kp_index: float,
-        timezone_name: str = "auto",
-    ) -> dict[str, dict[str, Any]]:
+        kp_index: float | None,
+        past_days: int = 1,
+    ) -> dict[str, dict]:
         forecast = self.get_forecast(
             latitude=latitude,
             longitude=longitude,
-            past_days=7,
+            past_days=past_days,
             forecast_days=1,
-            timezone_name=timezone_name,
         )
 
         air_quality = self.get_air_quality(
@@ -188,7 +187,6 @@ class OpenMeteoClient:
             longitude=longitude,
             past_days=7,
             forecast_days=1,
-            timezone_name=timezone_name,
         )
 
         weather_df = self._weather_result_to_dataframe(forecast)

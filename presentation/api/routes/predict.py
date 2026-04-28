@@ -13,6 +13,8 @@ def predict(
     try:
         user_profile = container.firebase_client.get_user_profile(user_id)
         category = (user_profile or {}).get("healthCategory", "GENERAL")
+        meteosensitivity_score = (user_profile or {}).get("meteosensitivity_score", 5)
+        age = (user_profile or {}).get("age", 30)
 
         kp = container.kp_index_client.get_effective_kp_index()
 
@@ -20,6 +22,7 @@ def predict(
             latitude=latitude,
             longitude=longitude,
             kp_index=kp,
+            forecast_days = 7
         )
 
         category_features = container.ml_service._encode_user_category(category)
@@ -35,6 +38,8 @@ def predict(
         predictions = container.ml_service.predict_risk(
             user_id=user_id,
             feature_rows=feature_rows,
+            meteosensitivity_score = meteosensitivity_score,
+            age = age
         )
 
         return {

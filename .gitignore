@@ -5,3 +5,5 @@ sensitive/
 */*/.DS_Store
 */.DS_Store
 .DS_Store
+
+test_predict.py
