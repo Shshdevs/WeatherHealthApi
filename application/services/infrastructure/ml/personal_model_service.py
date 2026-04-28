@@ -30,6 +30,15 @@ class PersonalModelService:
             "category_migraine",
             "category_general",
 
+            "sleep_quality",
+            "stress_score",
+            "pulse",
+            "water_liters",
+            "caffeine_cups",
+            "medications_taken",
+            "meteosensitivity_score",
+            "age",
+
             "temperature",
             "temperature_delta_6h",
             "temperature_delta_24h",
@@ -43,11 +52,7 @@ class PersonalModelService:
             "thunderstorm_probability",
             "cloud_cover",
             "sunshine_duration",
-            "pollen_index",
-            "sleep_quality",
-            "stress_score",
-            "water_liters",
-            "caffeine_cups",
+            "pollen_index"
         ]
 
     def _model_path(self, user_id: str) -> Path:
@@ -69,11 +74,15 @@ class PersonalModelService:
         model_existed_before = self.model_exists(user_id)
 
         category = (user_profile or {}).get("healthCategory", "GENERAL")
+        meteosensitivity_score = (user_profile or {}).get("meteosensitivityScore", 5)
+        age = (user_profile or {}).get("age")
 
         training_df = self.build_training_dataframe(
             diary_entries=diary_entries,
             weather_by_entry_id=weather_by_entry_id,
             user_category=category,
+            meteosensitivity_score = meteosensitivity_score,
+            age = age
         )
 
         if training_df.empty or len(training_df) < min_entries:
@@ -115,6 +124,7 @@ class PersonalModelService:
         energy_score = int(entry.get("energyScore", 5))
         stress_score = int(entry.get("stressScore", 1))
         sleep_quality = int(entry.get("sleepQuality", 5))
+        pulse = int(entry.get("pulse", 75))
 
         severe_symptoms = {
             SymptomType.MIGRAINE.value,
@@ -155,7 +165,10 @@ class PersonalModelService:
             or energy_score <= 2
             or stress_score >= 4
             or sleep_quality <= 2
+            or pulse >= 100
+            or pulse <= 50
         )
+    
     def _predict_symptoms_by_reasons(
         self,
         risk_score: float,
@@ -285,6 +298,8 @@ class PersonalModelService:
         diary_entries: list[dict[str, Any]],
         weather_by_entry_id: dict[str, dict[str, Any]],
         user_category: str = "GENERAL",
+        meteosensitivity_score: int = 5,
+        age: int = 30,
     ) -> pd.DataFrame:
         rows = []
 
@@ -328,8 +343,12 @@ class PersonalModelService:
                 "kp_index": float(weather.get("kp_index", 1)),
                 "sleep_quality": float(entry.get("sleepQuality", 3)),
                 "stress_score": float(entry.get("stressScore", 3)),
+                "pulse": float(entry.get("pulse", 75)),
+                "age": float(age),
                 "water_liters": float(entry.get("waterLiters", 1.0)),
                 "caffeine_cups": float(entry.get("caffeineCups", 0)),
+                "medications_taken": int(bool(entry.get("medicationsTaken", False))),
+                "meteosensitivity_score": float(meteosensitivity_score),
             }
             row.update(self._encode_user_category(user_category))
             rows.append(row)
@@ -463,7 +482,6 @@ class PersonalModelService:
     def _risk_level(self, risk_score: float) -> str:
         if risk_score >= 0.7:
             return "HIGH"
-
         if risk_score >= 0.4:
             return "MEDIUM"
 

@@ -3,3 +3,4 @@ __pycache__/
 sensitive/
 */*/.DS_Store
 */.DS_Store
+.DS_Store

@@ -4,6 +4,7 @@ from typing import Any
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from datetime import datetime, timezone
 
 
 class FirebaseClient:
@@ -30,9 +31,27 @@ class FirebaseClient:
 
         return {
             "healthCategory": data.get("healthCategory", "GENERAL"),
-            "dateBirth": data.get("dateBirth"),
+            "age": self._calculate_age(data.get("birthDate")),
             "token": data.get("token")
         }
+
+    def _calculate_age(self, birth_date) -> int:
+        if birth_date is None:
+            return 30
+
+        if hasattr(birth_date, "to_datetime"):
+            birth_dt = birth_date.to_datetime()
+        else:
+            birth_dt = birth_date
+
+        today = datetime.now(timezone.utc).date()
+        born = birth_dt.date()
+
+        age = today.year - born.year - (
+            (today.month, today.day) < (born.month, born.day)
+        )
+
+        return max(age, 0)
     
     def get_diary_entries(self, user_id: str, limit: int | None = None) -> list[dict[str, Any]]:
         query = (
