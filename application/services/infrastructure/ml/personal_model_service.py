@@ -36,8 +36,6 @@ class PersonalModelService:
             "water_liters",
             "caffeine_cups",
             "medications_taken",
-            "meteosensitivity_score",
-            "age",
 
             "temperature",
             "temperature_delta_6h",
@@ -106,6 +104,8 @@ class PersonalModelService:
         predictions = self.predict_risk(
             user_id=user_id,
             feature_rows=prediction_feature_rows,
+            meteosensitivity_score = meteosensitivity_score,
+            age = age
         )
 
         return {
@@ -416,6 +416,8 @@ class PersonalModelService:
         self,
         user_id: str,
         feature_rows: list[dict[str, Any]],
+        meteosensitivity_score: int = 5,
+        age: int | None = None,
     ) -> list[dict[str, Any]]:
         model_path = self._model_path(user_id)
 
@@ -444,7 +446,11 @@ class PersonalModelService:
 
         for row, risk_score in zip(feature_rows, probs):
             reasons = self._detect_risk_reasons(row)
-
+            risk_score = self._apply_profile_risk_adjustment(
+                risk_score=risk_score,
+                meteosensitivity_score=meteosensitivity_score,
+                age=age,
+            )
             result.append(
                 {
                     "forecastDate": row.get("forecastDate"),
@@ -469,6 +475,24 @@ class PersonalModelService:
 
         return result
 
+    def _apply_profile_risk_adjustment(
+        self,
+        risk_score: float,
+        meteosensitivity_score: int = 5,
+        age: int | None = None,
+    ) -> float:
+        adjusted = risk_score
+
+        adjusted += (meteosensitivity_score - 5) * 0.02
+
+        if age is not None:
+            if age >= 60:
+                adjusted += 0.05
+            elif age <= 18:
+                adjusted += 0.03
+
+        return min(max(adjusted, 0.0), 1.0)
+    
     def _encode_time_of_day(self, value: str) -> int:
         mapping = {
             TimeOfDay.MORNING.value: 0,
