@@ -523,7 +523,11 @@ class PersonalModelService:
         model_path = self._model_path(user_id)
 
         if not model_path.exists():
-            raise ValueError("Model not found")
+            return self.predict_basic_risk(
+                feature_rows=feature_rows,
+                meteosensitivity_score=meteosensitivity_score,
+                age=age,
+            )
 
         if not feature_rows:
             return []
@@ -831,6 +835,96 @@ class PersonalModelService:
 
         return reasons
     
+    def predict_basic_risk(
+        self,
+        feature_rows: list[dict[str, Any]],
+        meteosensitivity_score: int = 5,
+        age: int | None = None,
+    ) -> list[dict[str, Any]]:
+        if not feature_rows:
+            return []
+
+        result = []
+
+        for row in feature_rows:
+            reasons = self._detect_risk_reasons(row)
+
+            risk_score = 0.10
+
+            strong_reasons = {
+                RiskReason.PRESSURE_DROP,
+                RiskReason.PRESSURE_RISE,
+                RiskReason.PRESSURE_SWING,
+                RiskReason.TEMPERATURE_SWING,
+                RiskReason.GEOMAGNETIC_STORM,
+                RiskReason.THUNDERSTORM,
+                RiskReason.HEAT_STRESS,
+                RiskReason.COLD_STRESS,
+            }
+
+            medium_reasons = {
+                RiskReason.HIGH_HUMIDITY,
+                RiskReason.LOW_HUMIDITY,
+                RiskReason.STRONG_WIND,
+                RiskReason.PRECIPITATION,
+                RiskReason.LOW_SUNLIGHT,
+                RiskReason.HIGH_POLLEN,
+                RiskReason.TEMPERATURE_DROP,
+                RiskReason.TEMPERATURE_RISE,
+            }
+
+            risk_score += sum(
+                0.16 for reason in reasons
+                if reason in strong_reasons
+            )
+
+            risk_score += sum(
+                0.08 for reason in reasons
+                if reason in medium_reasons
+            )
+
+            risk_score = self._apply_profile_risk_adjustment(
+                risk_score=risk_score,
+                meteosensitivity_score=meteosensitivity_score,
+                age=age,
+            )
+
+            risk_score = min(max(risk_score, 0.0), 1.0)
+
+            symptoms = self._predict_symptoms_by_reasons(
+                risk_score=risk_score,
+                reasons=reasons,
+                row=row,
+            )
+
+            recommendations = self._build_recommendations(
+                risk_score=risk_score,
+                reasons=reasons,
+                symptoms=symptoms,
+                row=row,
+            )
+
+            result.append(
+                {
+                    "forecastDate": row.get("forecastDate"),
+                    "period": {
+                        "fromHour": row.get("fromHour"),
+                        "toHour": row.get("toHour"),
+                        "timeOfDay": row.get("timeOfDay", TimeOfDay.DAY.value),
+                    },
+                    "riskScore": float(risk_score),
+                    "riskLevel": self._risk_level(float(risk_score)),
+                    "riskReasons": [
+                        reason.value for reason in reasons
+                    ],
+                    "predictedSymptoms": symptoms,
+                    "recommendations": recommendations,
+                    "source": "BASIC_RULES",
+                }
+            )
+
+        return result
+    
     def _encode_user_category(self, category: str | None) -> dict[str, int]:
         category = category or "GENERAL"
 
@@ -841,3 +935,4 @@ class PersonalModelService:
             "category_migraine": int(category == "MIGRAINE"),
             "category_general": int(category == "GENERAL"),
         }
+    

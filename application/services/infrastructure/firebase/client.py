@@ -127,6 +127,7 @@ class FirebaseClient:
             .collection("diary_entries")
             .document()
         )
+        entry["id"] = ref.id
 
         ref.set(entry)
         return ref.id
