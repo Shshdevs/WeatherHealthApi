@@ -26,22 +26,20 @@ def update_diary(
         category = (user_profile or {}).get("healthCategory", "GENERAL")
         diary_entries = container.firebase_client.get_diary_entries(user_id)
 
-        kp = container.kp_index_client.get_effective_kp_index()
-
         past_days = calculate_past_days(diary_entries)
 
         weather_by_entry_id = container.open_meteo_client.build_weather_by_entry_id(
             diary_entries=diary_entries,
             latitude=latitude,
             longitude=longitude,
-            kp_index=kp,
+            kp_index_client=container.kp_index_client,
             past_days=past_days,
         )
 
         prediction_feature_rows = container.open_meteo_client.build_prediction_feature_rows(
             latitude=latitude,
             longitude=longitude,
-            kp_index=kp,
+            kp_index_client=container.kp_index_client,
             forecast_days = 7
         )
 

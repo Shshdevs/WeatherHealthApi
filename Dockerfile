@@ -21,5 +21,5 @@ RUN python -m pip install --upgrade pip \
 
 COPY . .
 
-CMD ["uvicorn", " ", "--host", "0.0.0.0", "--port", "125"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4000"]
 

@@ -17,12 +17,10 @@ def predict(
         meteosensitivity_score = (user_profile or {}).get("meteosensitivity_score", 5)
         age = (user_profile or {}).get("age", 30)
 
-        kp = container.kp_index_client.get_effective_kp_index()
-
         feature_rows = container.open_meteo_client.build_prediction_feature_rows(
             latitude=latitude,
             longitude=longitude,
-            kp_index=kp,
+            kp_index_client=container.kp_index_client,
             forecast_days = 7
         )
 

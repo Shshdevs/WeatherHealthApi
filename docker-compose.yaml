@@ -5,14 +5,14 @@ services:
     build: .
     container_name: weather-health-server
     ports:
-      - "8000:125"
+      - "4000:125"
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
       - ./sensitive/models:/app/sensitive/models
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:125/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3

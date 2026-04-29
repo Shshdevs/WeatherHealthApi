@@ -5,7 +5,7 @@ from typing import Any
 import openmeteo_requests
 import pandas as pd
 import requests_cache
-
+from datetime import datetime, timezone, timedelta
 from retry_requests import retry
 
 from application.services.infrastructure.open_meteo.schemas import (
@@ -111,6 +111,7 @@ class OpenMeteoClient:
         past_days: int = 2,
         timezone_name: str = "auto",
     ) -> AirQualityForecastResult:
+        
         hourly_variables = [
             "alder_pollen",
             "birch_pollen",
@@ -172,7 +173,7 @@ class OpenMeteoClient:
         diary_entries: list[dict],
         latitude: float,
         longitude: float,
-        kp_index: float | None,
+        kp_index_client,
         past_days: int = 1,
     ) -> dict[str, dict]:
         forecast = self.get_forecast(
@@ -199,11 +200,11 @@ class OpenMeteoClient:
 
         for entry in diary_entries:
             entry_id = entry.get("id")
-
-            if not entry_id:
-                continue
-
+            
             entry_time = self._entry_datetime(entry)
+
+            kp_index = kp_index_client.get_kp_index_at(entry_time)
+
             matched_row = self._nearest_row(df, entry_time)
 
             if matched_row is None:
@@ -220,10 +221,11 @@ class OpenMeteoClient:
         self,
         latitude: float,
         longitude: float,
-        kp_index: float,
+        kp_index_client,
         forecast_days: int = 2,
         timezone_name: str = "auto",
     ) -> list[dict[str, Any]]:
+
         forecast = self.get_forecast(
             latitude=latitude,
             longitude=longitude,
@@ -263,6 +265,15 @@ class OpenMeteoClient:
 
             for forecast_date, day_period_df in grouped:
                 representative = day_period_df.iloc[len(day_period_df) // 2]
+
+                kp_datetime = representative["date"]
+
+                if kp_datetime.tzinfo is None:
+                    kp_datetime = kp_datetime.to_pydatetime().replace(tzinfo=timezone.utc)
+                else:
+                    kp_datetime = kp_datetime.to_pydatetime()
+
+                kp_index = kp_index_client.get_forecast_kp_index_at(kp_datetime)
 
                 row = self._row_to_model_features(
                     row=representative,
