@@ -5,7 +5,7 @@ services:
     build: .
     container_name: weather-health-server
     ports:
-      - "4000:125"
+      - "4000:4000"
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
