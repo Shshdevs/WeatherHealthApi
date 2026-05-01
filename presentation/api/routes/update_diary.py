@@ -53,7 +53,7 @@ def update_diary(
 
         container.firebase_client.save_model_meta(
             user_id=user_id,
-            meta=result["model"],
+            meta=result.get("model"),
         )
 
         return {
@@ -67,6 +67,7 @@ def update_diary(
             },
             "predictions": attach_weather_to_predictions(result["predictions"], prediction_feature_rows),
         }
+    
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

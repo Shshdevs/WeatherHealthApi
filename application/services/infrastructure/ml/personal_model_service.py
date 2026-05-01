@@ -67,7 +67,7 @@ class PersonalModelService:
         prediction_feature_rows: list[dict[str, Any]],
         user_profile: dict[str, Any] | None = None,
         min_entries: int = 10,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any]:                  
         
         model_existed_before = self.model_exists(user_id)
 
@@ -84,7 +84,18 @@ class PersonalModelService:
         )
 
         if training_df.empty or len(training_df) < min_entries:
-            raise ValueError("Empty dataframe")
+            predictions = self.predict_basic_risk(
+                            feature_rows=prediction_feature_rows,
+                            meteosensitivity_score=meteosensitivity_score,
+                            age=age
+            )
+            return {
+                "userId": user_id,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "model": {"modelType": "LogisticRegression", "status": "NOT_TRAINED"},
+                "predictions": predictions,
+
+            }
 
         model_meta = self.train(
             user_id=user_id,
