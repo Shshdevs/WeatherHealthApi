@@ -894,12 +894,6 @@ class PersonalModelService:
                 if reason in medium_reasons
             )
 
-            risk_score = self._apply_profile_risk_adjustment(
-                risk_score=risk_score,
-                meteosensitivity_score=meteosensitivity_score,
-                age=age,
-            )
-
             risk_score = min(max(risk_score, 0.0), 1.0)
 
             symptoms = self._predict_symptoms_by_reasons(
