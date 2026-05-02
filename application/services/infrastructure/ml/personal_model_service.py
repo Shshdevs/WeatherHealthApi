@@ -30,7 +30,7 @@ class PersonalModelService:
             "category_migraine",
             "category_general",
 
-            "sleep_quality",
+            "sleep_hours",
             "stress_score",
             "pulse",
             "water_liters",
@@ -94,7 +94,6 @@ class PersonalModelService:
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "model": {"modelType": "LogisticRegression", "status": "NOT_TRAINED"},
                 "predictions": predictions,
-
             }
 
         model_meta = self.train(
@@ -134,7 +133,7 @@ class PersonalModelService:
         wellbeing_score = int(entry.get("wellbeingScore", 5))
         energy_score = int(entry.get("energyScore", 5))
         stress_score = int(entry.get("stressScore", 1))
-        sleep_quality = int(entry.get("sleepQuality", 5))
+        sleep_quality = float(entry.get("sleepHours", 8.0))
         pulse = int(entry.get("pulse", 75))
 
         severe_symptoms = {
@@ -175,7 +174,7 @@ class PersonalModelService:
             or moderate_symptoms_count >= 2
             or energy_score <= 2
             or stress_score >= 4
-            or sleep_quality <= 2
+            or sleep_quality <= 6.5
             or pulse >= 100
             or pulse <= 50
         )
@@ -453,7 +452,7 @@ class PersonalModelService:
                 "wind_speed": float(weather.get("wind_speed", 0)),
                 "precipitation": float(weather.get("precipitation", 0)),
                 "kp_index": float(weather.get("kp_index", 1)),
-                "sleep_quality": float(entry.get("sleepQuality", 3)),
+                "sleep_hours": float(entry.get("sleepHours", 8.0)),
                 "stress_score": float(entry.get("stressScore", 3)),
                 "pulse": float(entry.get("pulse", 75)),
                 "age": float(age),
@@ -560,7 +559,7 @@ class PersonalModelService:
             "category_migraine": 0,
             "category_general": 1,
 
-            "sleep_quality": 3,
+            "sleep_hours": 8.0,
             "stress_score": 3,
             "pulse": 75,
             "water_liters": 1.0,
@@ -852,6 +851,7 @@ class PersonalModelService:
         meteosensitivity_score: int = 5,
         age: int | None = None,
     ) -> list[dict[str, Any]]:
+        
         if not feature_rows:
             return []
 
@@ -927,7 +927,6 @@ class PersonalModelService:
                     "source": "BASIC_RULES",
                 }
             )
-
         return result
     
     def _encode_user_category(self, category: str | None) -> dict[str, int]:
