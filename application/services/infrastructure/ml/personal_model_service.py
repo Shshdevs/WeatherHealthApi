@@ -12,7 +12,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from application.domain.enums.health import RiskReason, SymptomType, TimeOfDay, RecommendationType
+from application.domain.enums.health import RiskReason, SymptomType, TimeOfDay, RecommendationType, ActivityLevel
 
 
 class PersonalModelService:
@@ -24,18 +24,18 @@ class PersonalModelService:
             "hour",
             "time_of_day_code",
 
-            "category_hypotonic",
-            "category_hypertonic",
-            "category_joint_disease",
-            "category_migraine",
-            "category_general",
-
             "sleep_hours",
             "stress_score",
             "pulse",
             "water_liters",
             "caffeine_cups",
             "medications_taken",
+
+            "activity_none",
+            "activity_low",
+            "activity_medium",
+            "activity_high",
+            "activity_very_active",
 
             "temperature",
             "temperature_delta_6h",
@@ -75,24 +75,30 @@ class PersonalModelService:
         meteosensitivity_score = (user_profile or {}).get("meteosensitivityScore", 5)
         age = (user_profile or {}).get("age", 30)
 
+        prediction_feature_rows = [
+            {
+                **row,
+                **self._encode_user_category(category),
+                **self._encode_activity_level(row.get("activityLevel")),
+            }
+            for row in prediction_feature_rows
+        ]
+
         training_df = self.build_training_dataframe(
             diary_entries=diary_entries,
-            weather_by_entry_id=weather_by_entry_id,
-            user_category=category,
-            meteosensitivity_score = meteosensitivity_score,
-            age = age
+            weather_by_entry_id=weather_by_entry_id
         )
 
-        if training_df.empty or len(training_df) < min_entries:
+        if training_df.empty or len(training_df) < min_entries or training_df["bad_state"].nunique() < 2:
             predictions = self.predict_basic_risk(
-                            feature_rows=prediction_feature_rows,
-                            meteosensitivity_score=meteosensitivity_score,
-                            age=age
+                feature_rows=prediction_feature_rows,
+                meteosensitivity_score=meteosensitivity_score,
+                age=age
             )
             return {
                 "userId": user_id,
                 "createdAt": datetime.now(timezone.utc).isoformat(),
-                "model": {"modelType": "LogisticRegression", "status": "NOT_TRAINED"},
+                "model": {"modelType": "LogisticRegression", "status": "NOT_TRAINED", "entriesCount": len(training_df)},
                 "predictions": predictions,
             }
 
@@ -108,6 +114,7 @@ class PersonalModelService:
             {
                 **row,
                 **self._encode_user_category(category),
+                **self._encode_activity_level(row.get("activityLevel"))
             }
             for row in prediction_feature_rows
         ]
@@ -131,9 +138,10 @@ class PersonalModelService:
         symptoms: list[str],
     ) -> bool:
         wellbeing_score = int(entry.get("wellbeingScore", 5))
-        energy_score = int(entry.get("energyScore", 5))
+        activity_level = entry.get("activityLevel", ActivityLevel.MEDIUM.value)
+
         stress_score = int(entry.get("stressScore", 1))
-        sleep_quality = float(entry.get("sleepHours", 8.0))
+        sleep_hours = float(entry.get("sleepHours", 8.0))
         pulse = int(entry.get("pulse", 75))
 
         severe_symptoms = {
@@ -169,12 +177,11 @@ class PersonalModelService:
         )
 
         return (
-            wellbeing_score <= 2
+            wellbeing_score <= 3
             or has_severe_symptom
             or moderate_symptoms_count >= 2
-            or energy_score <= 2
             or stress_score >= 4
-            or sleep_quality <= 6.5
+            or sleep_hours <= 6.5
             or pulse >= 100
             or pulse <= 50
         )
@@ -407,10 +414,7 @@ class PersonalModelService:
     def build_training_dataframe(
         self,
         diary_entries: list[dict[str, Any]],
-        weather_by_entry_id: dict[str, dict[str, Any]],
-        user_category: str = "GENERAL",
-        meteosensitivity_score: int = 5,
-        age: int = 30,
+        weather_by_entry_id: dict[str, dict[str, Any]]
     ) -> pd.DataFrame:
         rows = []
 
@@ -455,13 +459,11 @@ class PersonalModelService:
                 "sleep_hours": float(entry.get("sleepHours", 8.0)),
                 "stress_score": float(entry.get("stressScore", 3)),
                 "pulse": float(entry.get("pulse", 75)),
-                "age": float(age),
                 "water_liters": float(entry.get("waterLiters", 1.0)),
                 "caffeine_cups": float(entry.get("caffeineCups", 0)),
                 "medications_taken": int(bool(entry.get("medicationsTaken", False))),
-                "meteosensitivity_score": float(meteosensitivity_score),
             }
-            row.update(self._encode_user_category(user_category))
+            row.update(self._encode_activity_level(entry.get("activityLevel")))
             rows.append(row)
 
         return pd.DataFrame(rows)
@@ -553,18 +555,18 @@ class PersonalModelService:
             "hour": 12,
             "time_of_day_code": 1,
 
-            "category_hypotonic": 0,
-            "category_hypertonic": 0,
-            "category_joint_disease": 0,
-            "category_migraine": 0,
-            "category_general": 1,
-
             "sleep_hours": 8.0,
             "stress_score": 3,
             "pulse": 75,
             "water_liters": 1.0,
             "caffeine_cups": 0,
             "medications_taken": 0,
+
+            "activity_none": 0,
+            "activity_low": 0,
+            "activity_medium": 1,
+            "activity_high": 0,
+            "activity_very_active": 0,
 
             "temperature": 20,
             "temperature_delta_6h": 0,
@@ -896,6 +898,11 @@ class PersonalModelService:
 
             risk_score = min(max(risk_score, 0.0), 1.0)
 
+            risk_score = self._apply_profile_risk_adjustment(
+                risk_score = risk_score, 
+                meteosensitivity_score = meteosensitivity_score,
+                age=age
+            )
             symptoms = self._predict_symptoms_by_reasons(
                 risk_score=risk_score,
                 reasons=reasons,
@@ -929,6 +936,17 @@ class PersonalModelService:
             )
         return result
     
+    def _encode_activity_level(self, activity_level: str | None) -> dict[str, int]:
+        activity_level = activity_level or ActivityLevel.MEDIUM.value
+
+        return {
+            "activity_none": int(activity_level == ActivityLevel.NONE.value),
+            "activity_low": int(activity_level == ActivityLevel.LOW.value),
+            "activity_medium": int(activity_level == ActivityLevel.MEDIUM.value),
+            "activity_high": int(activity_level == ActivityLevel.HIGH.value),
+            "activity_very_active": int(activity_level == ActivityLevel.VERY_ACTIVE.value),
+        }
+
     def _encode_user_category(self, category: str | None) -> dict[str, int]:
         category = category or "GENERAL"
 

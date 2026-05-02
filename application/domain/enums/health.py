@@ -78,3 +78,10 @@ class UserHealthCategory(str, Enum):
     JOINT_DISEASE = "JOINT_DISEASE"
     MIGRAINE = "MIGRAINE"
     GENERAL = "GENERAL"
+
+class ActivityLevel(str, Enum):
+    NONE = "NONE"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    VERY_ACTIVE = "VERY_ACTIVE"
