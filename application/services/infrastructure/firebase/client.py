@@ -138,15 +138,12 @@ class FirebaseClient:
     def send_fcm_notification(
         self,
         token: str,
-        title: str,
-        body: str,
         data: dict[str, str] | None = None,
     ) -> str:
         message = messaging.Message(
             token=token,
-            notification=messaging.Notification(
-                title=title,
-                body=body,
+            android=messaging.AndroidConfig(
+                priority="high"
             ),
             data=data or {},
         )

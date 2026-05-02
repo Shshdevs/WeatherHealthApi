@@ -52,7 +52,7 @@ def create_app() -> FastAPI:
     scheduler.add_job(
         container.notification_pipeline_service.run_for_all_users,
         trigger="cron",
-        hour="7,10,13,16,19,22",
+        hour="7,10,19,22",
         minute=0,
         id="notification_pipeline",
         replace_existing=True,

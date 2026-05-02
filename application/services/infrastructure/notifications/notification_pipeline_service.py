@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 from typing import Any
 
 
@@ -53,6 +53,11 @@ class NotificationPipelineService:
         if not self._is_allowed_notification_time(settings):
             return {"sent": 0, "skipped": 1, "reason": "QUIET_HOURS"}
 
+        forecast_context = self._get_notification_forecast_context()
+
+        if forecast_context is None:
+            return {"sent": 0, "skipped": 1, "reason": "OUTSIDE_NOTIFICATION_TIME"}
+
         token = user_doc.get("token")
         latitude = user_doc.get("latitude")
         longitude = user_doc.get("longitude")
@@ -63,19 +68,17 @@ class NotificationPipelineService:
         user_profile = self.firebase_client.get_user_profile(user_id)
         diary_entries = self.firebase_client.get_diary_entries(user_id)
 
-        kp = self.kp_index_client.get_effective_kp_index()
-
         weather_by_entry_id = self.open_meteo_client.build_weather_by_entry_id(
             diary_entries=diary_entries,
             latitude=latitude,
             longitude=longitude,
-            kp_index=kp,
+            kp_index_client=self.kp_index_client,
         )
 
         prediction_feature_rows = self.open_meteo_client.build_prediction_feature_rows(
             latitude=latitude,
             longitude=longitude,
-            kp_index=kp,
+            kp_index_client=self.kp_index_client,
             forecast_days=2,
         )
 
@@ -100,21 +103,21 @@ class NotificationPipelineService:
         predictions_to_notify = self._filter_predictions(
             predictions=pipeline_result["predictions"],
             settings=settings,
+            forecast_context=forecast_context,
         )
 
         sent = 0
 
         for prediction in predictions_to_notify:
-            title, body = self._build_notification_text(prediction)
 
             self.firebase_client.send_fcm_notification(
                 token=token,
-                title=title,
-                body=body,
                 data={
                     "type": "WEATHER_HEALTH_RISK",
                     "forecastDate": str(prediction.get("forecastDate")),
+                    "forecastDayType": forecast_context["forecastDayType"],
                     "riskLevel": str(prediction.get("riskLevel")),
+                    "predictedSymptoms": ",".join(prediction.get("predictedSymptoms", [])),
                 },
             )
 
@@ -123,8 +126,8 @@ class NotificationPipelineService:
                 notification={
                     "sentAt": datetime.now(timezone.utc).isoformat(),
                     "status": "SENT",
-                    "title": title,
-                    "body": body,
+                    "forecastDayType": forecast_context["forecastDayType"],
+                    "forecastDate": forecast_context["forecastDate"],
                     "prediction": prediction,
                     "fcmToken": token,
                 },
@@ -141,13 +144,18 @@ class NotificationPipelineService:
         self,
         predictions: list[dict[str, Any]],
         settings: dict[str, Any],
+        forecast_context: dict[str, Any],
     ) -> list[dict[str, Any]]:
         result = []
 
         only_high = settings.get("only_high_risk_notifications", False)
         allowed_symptoms = set(settings.get("symptoms_notify_about", []))
+        target_forecast_date = forecast_context["forecastDate"]
 
         for prediction in predictions:
+            if str(prediction.get("forecastDate")) != target_forecast_date:
+                continue
+
             if only_high and prediction.get("riskLevel") != "HIGH":
                 continue
 
@@ -174,19 +182,32 @@ class NotificationPipelineService:
             return start <= now <= end
 
         return now >= start or now <= end
+    
+    def _get_notification_forecast_context(self) -> dict[str, Any] | None:
+        now = datetime.now()
 
-    def _build_notification_text(self, prediction: dict[str, Any]) -> tuple[str, str]:
-        risk_level = prediction.get("riskLevel")
-        date = prediction.get("forecastDate")
-        symptoms = prediction.get("predictedSymptoms", [])
+        current_time = now.time()
 
-        title = "Прогноз самочувствия"
+        morning_start = datetime.strptime("06:00", "%H:%M").time()
+        morning_end = datetime.strptime("12:00", "%H:%M").time()
 
-        if risk_level == "HIGH":
-            title = "Высокий риск ухудшения самочувствия"
+        day_start = datetime.strptime("12:00", "%H:%M").time()
+        day_end = datetime.strptime("23:00", "%H:%M").time()
 
-        symptoms_text = ", ".join(symptoms[:3]) if symptoms else "неприятные симптомы"
+        if morning_start <= current_time < morning_end:
+            return {
+                "forecastDayType": ForecastDayType.TODAY,
+                "forecastDate": date.today().isoformat(),
+            }
 
-        body = f"{date}: возможны {symptoms_text}. Проверьте рекомендации в приложении."
+        if day_start <= current_time < day_end:
+            return {
+                "forecastDayType": ForecastDayType.TOMORROW,
+                "forecastDate": (date.today() + timedelta(days=1)).isoformat(),
+            }
 
-        return title, body
+        return None
+
+class ForecastDayType:
+    TODAY = "TODAY"
+    TOMORROW = "TOMORROW"
