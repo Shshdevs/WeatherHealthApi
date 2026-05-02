@@ -13,6 +13,8 @@ def predict(
 ):
     try:
         user_profile = container.firebase_client.get_user_profile(user_id)
+        container.firebase_client.update_user_location(user_id=user_id, latitude=latitude, longitude=longitude)
+        
         category = (user_profile or {}).get("healthCategory", "GENERAL")
         meteosensitivity_score = (user_profile or {}).get("meteosensitivity_score", 5)
         age = (user_profile or {}).get("age", 30)

@@ -79,6 +79,9 @@ class FirebaseClient:
             "token": data.get("token")
         }
 
+    def update_user_location(self, user_id: str, latitude: float, longitude: float):
+        self.db.collection("users").document(user_id).update({"latitude": latitude, "longitude": longitude})
+
     def _calculate_age(self, birth_date) -> int:
         if birth_date is None:
             return 30
