@@ -55,7 +55,10 @@ def update_diary(
             user_id=user_id,
             meta=result.get("model"),
         )
-
+        container.firebase_client.save_predictions(
+            user_id=user_id,
+            predictions=result["predictions"],
+        )
         return {
             "status_code": 200,
             "userId": user_id,

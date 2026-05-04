@@ -43,6 +43,10 @@ def predict(
             age = age
         )
 
+        container.firebase_client.save_predictions(
+            user_id=user_id,
+            predictions=predictions,
+        )
         return {
             "status_code": 200,
             "userId": user_id,
