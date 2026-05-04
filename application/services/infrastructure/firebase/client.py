@@ -176,15 +176,39 @@ class FirebaseClient:
         prediction: dict[str, Any],
     ) -> str:
         prediction.setdefault("createdAt", firestore.SERVER_TIMESTAMP)
+        user_ref = self.db.collection("users").document(user_id)
 
-        ref = (
-            self.db.collection("users") 
-            .document(user_id) 
-            .collection("predictions") 
-            .document() 
+        prediction_ref = (
+            user_ref
+            .collection("predictions")
+            .document()
+        )
+
+        batch = self.db.batch()
+
+        batch.set(prediction_ref, prediction)
+
+        risk_reasons = set(prediction.get("riskReasons") or [])
+
+        for reason in risk_reasons:
+            stat_ref = (
+                user_ref
+                .collection("riskReasonStats")
+                .document(reason)
             )
-        ref.set(prediction)
-        return ref.id
+
+            batch.set(
+                stat_ref,
+                {
+                    "reason": reason,
+                    "count": firestore.Increment(1),
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+
+        batch.commit()
+        return prediction_ref.id
     
     def save_predictions(
         self,
