@@ -169,43 +169,76 @@ class FirebaseClient:
             .document("meta") \
             .get()
         return doc.to_dict() if doc.exists else None
+    
+    def _build_prediction_doc_id(self, prediction: dict[str, Any]) -> str:
+        forecast_date = prediction.get("forecastDate")
 
+        if not forecast_date:
+            raise ValueError("prediction.forecastDate is required")
+
+        period = prediction.get("period") or {}
+
+        from_hour = period.get("fromHour")
+        to_hour = period.get("toHour")
+        time_of_day = period.get("timeOfDay")
+
+        if from_hour is not None and to_hour is not None:
+            period_part = f"{from_hour:02d}-{to_hour:02d}"
+        elif time_of_day:
+            period_part = str(time_of_day).lower()
+        else:
+            period_part = "day"
+
+        return f"{forecast_date}_{period_part}"
+    
     def save_prediction(
         self,
         user_id: str,
         prediction: dict[str, Any],
     ) -> str:
         prediction.setdefault("createdAt", firestore.SERVER_TIMESTAMP)
+        prediction["updatedAt"] = firestore.SERVER_TIMESTAMP
+
+        prediction_id = self._build_prediction_doc_id(prediction)
+
         user_ref = self.db.collection("users").document(user_id)
 
         prediction_ref = (
             user_ref
             .collection("predictions")
-            .document()
+            .document(prediction_id)
         )
+
+        existing_snapshot = prediction_ref.get()
+        is_new_prediction = not existing_snapshot.exists
 
         batch = self.db.batch()
 
-        batch.set(prediction_ref, prediction)
+        batch.set(
+            prediction_ref,
+            prediction,
+            merge=True,
+        )
 
-        risk_reasons = set(prediction.get("riskReasons") or [])
+        if is_new_prediction:
+            risk_reasons = set(prediction.get("riskReasons") or [])
 
-        for reason in risk_reasons:
-            stat_ref = (
-                user_ref
-                .collection("riskReasonStats")
-                .document(reason)
-            )
+            for reason in risk_reasons:
+                stat_ref = (
+                    user_ref
+                    .collection("riskReasonStats")
+                    .document(reason)
+                )
 
-            batch.set(
-                stat_ref,
-                {
-                    "reason": reason,
-                    "count": firestore.Increment(1),
-                    "updatedAt": firestore.SERVER_TIMESTAMP,
-                },
-                merge=True,
-            )
+                batch.set(
+                    stat_ref,
+                    {
+                        "reason": reason,
+                        "count": firestore.Increment(1),
+                        "updatedAt": firestore.SERVER_TIMESTAMP,
+                    },
+                    merge=True,
+                )
 
         batch.commit()
         return prediction_ref.id
