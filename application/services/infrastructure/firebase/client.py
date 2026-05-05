@@ -162,14 +162,7 @@ class FirebaseClient:
             .document("meta") \
             .set(meta, merge=True)
 
-    def get_model_meta(self, user_id: str) -> dict[str, Any] | None:
-        doc = self.db.collection("users") \
-            .document(user_id) \
-            .collection("ml_model") \
-            .document("meta") \
-            .get()
-        return doc.to_dict() if doc.exists else None
-    
+  
     def _build_prediction_doc_id(self, prediction: dict[str, Any]) -> str:
         forecast_date = prediction.get("forecastDate")
 

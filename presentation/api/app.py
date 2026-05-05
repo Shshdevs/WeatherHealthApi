@@ -17,6 +17,7 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         yield
+        container.stats_generator_listener.stop()
         scheduler.shutdown()
 
     logging.basicConfig(
