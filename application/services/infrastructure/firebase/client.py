@@ -202,9 +202,6 @@ class FirebaseClient:
             .document(prediction_id)
         )
 
-        existing_snapshot = prediction_ref.get()
-        is_new_prediction = not existing_snapshot.exists
-
         batch = self.db.batch()
 
         batch.set(
@@ -212,26 +209,6 @@ class FirebaseClient:
             prediction,
             merge=True,
         )
-
-        if is_new_prediction:
-            risk_reasons = set(prediction.get("riskReasons") or [])
-
-            for reason in risk_reasons:
-                stat_ref = (
-                    user_ref
-                    .collection("riskReasonStats")
-                    .document(reason)
-                )
-
-                batch.set(
-                    stat_ref,
-                    {
-                        "reason": reason,
-                        "count": firestore.Increment(1),
-                        "updatedAt": firestore.SERVER_TIMESTAMP,
-                    },
-                    merge=True,
-                )
 
         batch.commit()
         return prediction_ref.id
