@@ -73,7 +73,6 @@ class StatsGeneratorListener:
         for user_id in affected_user_ids:
             stats = self._build_predictions_stats(user_id)
             
-            print(stats)
             self.db.collection("users").document(user_id) \
                 .collection("stats") \
                 .document("main") \
@@ -110,13 +109,3 @@ class StatsGeneratorListener:
             "datedWellbeingScores": dated_wellbeing_scores,
             "symptomsRated": rated_symptoms
         }
-        
-if __name__ == "__main__":
-    import time
-    gen = StatsGeneratorListener()
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Stopping listener...", flush=True)
-        gen.stop()
