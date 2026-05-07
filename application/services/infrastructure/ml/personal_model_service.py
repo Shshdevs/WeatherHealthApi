@@ -597,10 +597,6 @@ class PersonalModelService:
         for row, risk_score in zip(feature_rows, probs):
             reasons = self._detect_risk_reasons(row)
 
-            risk_score = self._apply_weather_reason_adjustment(
-                risk_score=float(risk_score),
-                reasons=reasons,
-            )
 
             risk_score = self._apply_profile_risk_adjustment(
                 risk_score=risk_score,
@@ -672,6 +668,7 @@ class PersonalModelService:
         adjusted += sum(0.05 for reason in reasons if reason in medium_reasons)
 
         return min(max(adjusted, 0.0), 1.0)
+    
     def _apply_profile_risk_adjustment(
         self,
         risk_score: float,

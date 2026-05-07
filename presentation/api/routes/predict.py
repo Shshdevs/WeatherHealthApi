@@ -43,7 +43,6 @@ def predict(
             age = age
         )
 
-        
         return {
             "status_code": 200,
             "userId": user_id,
